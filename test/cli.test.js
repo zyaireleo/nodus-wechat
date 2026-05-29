@@ -201,7 +201,7 @@ test("install-openilink runs the official installer command", () => {
   assert.equal(fs.readFileSync(logPath, "utf8"), "installed");
 });
 
-test("start defaults to local runtime and reports missing OpeniLink CLI", () => {
+test("start can skip automatic OpeniLink install", () => {
   const home = tempHome();
   const hermesHome = path.join(home, "hermes");
   const binDir = path.join(home, "bin");
@@ -214,11 +214,37 @@ test("start defaults to local runtime and reports missing OpeniLink CLI", () => 
   });
   assert.equal(setup.status, 0, setup.stderr);
 
-  const result = run(["start"], { NODUS_WECHAT_HOME: home, PATH: binDir });
+  const result = run(["start", "--no-install"], { NODUS_WECHAT_HOME: home, PATH: binDir });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /OpeniLink Hub CLI `oih` is not installed/);
   assert.match(result.stderr, /install-openilink/);
+});
+
+test("start installs OpeniLink automatically when missing", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  const logPath = path.join(home, "openilink-install.log");
+  fs.mkdirSync(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const result = run(["start"], {
+    NODUS_WECHAT_HOME: home,
+    PATH: binDir,
+    NODUS_WECHAT_OPENILINK_INSTALL_COMMAND: `${process.execPath} -e "require('node:fs').writeFileSync(process.argv[1], 'installed')" ${logPath}`,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /installing it now/);
+  assert.equal(fs.readFileSync(logPath, "utf8"), "installed");
+  assert.match(result.stderr, /still not on PATH/);
 });
 
 test("docker mode remains available explicitly", () => {

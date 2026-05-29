@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const VERSION = "0.6.1";
+const VERSION = "0.6.2";
 const DEFAULT_BASE_URL = "https://api.nodus.sbs/";
 const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_OPENILINK_ORIGIN = "http://localhost:9800";
@@ -43,7 +43,7 @@ Usage:
   nodus-wechat install-hermes
   nodus-wechat install-openilink
   nodus-wechat doctor
-  nodus-wechat start [--docker]
+  nodus-wechat start [--docker] [--no-install]
   nodus-wechat status [--docker]
   nodus-wechat logs [--docker]
   nodus-wechat stop [--docker]
@@ -56,7 +56,7 @@ Commands:
   install-openilink
                   Install OpeniLink Hub native CLI with the official installer.
   doctor          Check local prerequisites and configuration.
-  start           Start OpeniLink + webhook with local processes by default.
+  start           Start OpeniLink + webhook with local processes by default; installs OpeniLink if missing.
   status          Show local process status.
   logs            Follow local runtime logs.
   stop            Stop the local runtime.
@@ -78,7 +78,7 @@ function parseArgs(argv) {
     }
 
     const key = item.slice(2);
-    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker") {
+    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker" || key === "no-install") {
       result[key] = true;
       continue;
     }
@@ -377,7 +377,7 @@ function setup(options) {
   console.log(`OpeniLink Hub: ${config.openilink.publicOrigin}`);
   console.log(`Webhook URL for OpeniLink: http://poc-webhook:${config.webhook.port}/webhook`);
   console.log("Runtime mode: host process by default; Docker is used only with `--docker`.");
-  console.log("Run `nodus-wechat start` to start the local host runtime.");
+  console.log("Run `nodus-wechat start` to start the local host runtime; it will install OpeniLink if missing.");
 }
 
 function installHermes() {
@@ -670,7 +670,7 @@ function startDocker() {
   return runDockerCompose(config, ["up", "-d"]);
 }
 
-function startLocal() {
+function startLocal(options) {
   const config = loadRuntimeConfig();
   if (!config) {
     return 1;
@@ -682,11 +682,25 @@ function startLocal() {
     return 1;
   }
 
-  const oih = commandPath("oih");
+  let oih = commandPath("oih");
   if (!oih) {
-    console.error("OpeniLink Hub CLI `oih` is not installed.");
-    console.error("Run: nodus-wechat install-openilink");
-    return 1;
+    if (options["no-install"]) {
+      console.error("OpeniLink Hub CLI `oih` is not installed.");
+      console.error("Run: nodus-wechat install-openilink");
+      return 1;
+    }
+
+    console.log("OpeniLink Hub CLI `oih` is not installed; installing it now.");
+    const installResult = installOpeniLink();
+    if (installResult !== 0) {
+      return installResult;
+    }
+    oih = commandPath("oih");
+    if (!oih) {
+      console.error("OpeniLink installer completed, but `oih` is still not on PATH.");
+      console.error("Open a new terminal or add the installed OpeniLink path to PATH, then rerun `nodus-wechat start`.");
+      return 1;
+    }
   }
 
   const env = localRuntimeEnv(config);
@@ -699,7 +713,7 @@ function startLocal() {
 }
 
 function start(options) {
-  return options.docker ? startDocker() : startLocal();
+  return options.docker ? startDocker() : startLocal(options);
 }
 
 function statusDocker() {
