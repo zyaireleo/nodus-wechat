@@ -121,6 +121,7 @@ test("bare command runs setup", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /AstraGate API Key/);
   assert.match(result.stdout, /Config written:/);
+  assert.match(result.stdout, /Runtime mode: host process by default/);
 
   const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
   assert.equal(config.sub2api.baseUrl, "https://api.nodus.sbs/");

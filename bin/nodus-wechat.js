@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const VERSION = "0.6.0";
+const VERSION = "0.6.1";
 const DEFAULT_BASE_URL = "https://api.nodus.sbs/";
 const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_OPENILINK_ORIGIN = "http://localhost:9800";
@@ -376,7 +376,8 @@ function setup(options) {
   console.log(`Model: ${config.agent.model}`);
   console.log(`OpeniLink Hub: ${config.openilink.publicOrigin}`);
   console.log(`Webhook URL for OpeniLink: http://poc-webhook:${config.webhook.port}/webhook`);
-  console.log("Run `nodus-wechat start` to start the local runtime.");
+  console.log("Runtime mode: host process by default; Docker is used only with `--docker`.");
+  console.log("Run `nodus-wechat start` to start the local host runtime.");
 }
 
 function installHermes() {
