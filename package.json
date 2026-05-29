@@ -4,6 +4,10 @@
   "description": "CLI installer for Nodus WeChat, Hermes, and the local OpeniLink webhook runtime.",
   "license": "MIT",
   "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zyaireleo/nodus-wechat.git"
+  },
   "bin": {
     "nodus-wechat": "bin/nodus-wechat.js"
   },
