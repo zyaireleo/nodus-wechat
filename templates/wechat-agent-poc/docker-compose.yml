@@ -1,0 +1,26 @@
+services:
+  openilink:
+    image: ghcr.io/openilink/openilink-hub:latest
+    container_name: sub2api-openilink-poc
+    restart: unless-stopped
+    working_dir: /data
+    ports:
+      - "${OPENILINK_PORT:-9800}:9800"
+    environment:
+      RP_ORIGIN: "${OPENILINK_PUBLIC_ORIGIN:-http://localhost:9800}"
+      RP_ID: "${OPENILINK_RP_ID:-localhost}"
+    volumes:
+      - "${OPENILINK_DATA_DIR:-/opt/sub2api/openilink-hub-data}:/var/lib/openilink-hub"
+
+  poc-webhook:
+    image: python:3.12-alpine
+    container_name: sub2api-wechat-poc-webhook
+    restart: unless-stopped
+    working_dir: /app
+    command: ["python", "server.py"]
+    ports:
+      - "${POC_WEBHOOK_BIND:-127.0.0.1}:${POC_WEBHOOK_PORT:-9811}:9811"
+    environment:
+      POC_WEBHOOK_TOKEN: "${POC_WEBHOOK_TOKEN:-}"
+    volumes:
+      - ./poc-webhook:/app:ro

@@ -1,0 +1,4 @@
+.env
+openilink-data/
+__pycache__/
+*.pyc

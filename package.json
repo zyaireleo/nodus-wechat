@@ -1,0 +1,27 @@
+{
+  "name": "nodus-wechat",
+  "version": "0.6.0",
+  "description": "CLI installer for Nodus WeChat, Hermes, and the local OpeniLink webhook runtime.",
+  "license": "MIT",
+  "private": false,
+  "bin": {
+    "nodus-wechat": "bin/nodus-wechat.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "release:check": "npm test && npm pack --dry-run",
+    "prepublishOnly": "npm test"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
