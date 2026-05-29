@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const VERSION = "0.6.2";
+const VERSION = "0.7.0";
 const DEFAULT_BASE_URL = "https://api.nodus.sbs/";
 const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_OPENILINK_ORIGIN = "http://localhost:9800";
@@ -43,7 +43,7 @@ Usage:
   nodus-wechat install-hermes
   nodus-wechat install-openilink
   nodus-wechat doctor
-  nodus-wechat start [--docker] [--no-install]
+  nodus-wechat start [--docker] [--no-install] [--no-hermes]
   nodus-wechat status [--docker]
   nodus-wechat logs [--docker]
   nodus-wechat stop [--docker]
@@ -56,7 +56,7 @@ Commands:
   install-openilink
                   Install OpeniLink Hub native CLI with the official installer.
   doctor          Check local prerequisites and configuration.
-  start           Start OpeniLink + webhook with local processes by default; installs OpeniLink if missing.
+  start           Start Hermes Gateway, OpeniLink, and webhook on the host by default.
   status          Show local process status.
   logs            Follow local runtime logs.
   stop            Stop the local runtime.
@@ -78,7 +78,7 @@ function parseArgs(argv) {
     }
 
     const key = item.slice(2);
-    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker" || key === "no-install") {
+    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker" || key === "no-install" || key === "no-hermes") {
       result[key] = true;
       continue;
     }
@@ -377,7 +377,7 @@ function setup(options) {
   console.log(`OpeniLink Hub: ${config.openilink.publicOrigin}`);
   console.log(`Webhook URL for OpeniLink: http://poc-webhook:${config.webhook.port}/webhook`);
   console.log("Runtime mode: host process by default; Docker is used only with `--docker`.");
-  console.log("Run `nodus-wechat start` to start the local host runtime; it will install OpeniLink if missing.");
+  console.log("Run `nodus-wechat start` to start Hermes Gateway plus the local host runtime.");
 }
 
 function installHermes() {
@@ -519,6 +519,16 @@ function commandPath(name) {
   return result.stdout.trim() || null;
 }
 
+function hermesPath(config) {
+  return (
+    commandPath("hermes") ||
+    (fs.existsSync(path.join(os.homedir(), ".local", "bin", "hermes")) ? path.join(os.homedir(), ".local", "bin", "hermes") : null) ||
+    (config?.hermes?.home && fs.existsSync(path.join(config.hermes.home, "hermes-agent", "venv", "bin", "hermes"))
+      ? path.join(config.hermes.home, "hermes-agent", "venv", "bin", "hermes")
+      : null)
+  );
+}
+
 function runtimePath(config, name) {
   return path.join(config.runtime.dir, name);
 }
@@ -597,6 +607,7 @@ function localRuntimeEnv(config) {
   return {
     ...process.env,
     ...env,
+    HERMES_HOME: config.hermes?.home || hermesHome(),
     LISTEN: `:${config.openilink?.port || DEFAULT_OPENILINK_PORT}`,
     RP_ORIGIN: config.openilink?.publicOrigin || DEFAULT_OPENILINK_ORIGIN,
     RP_ID: config.openilink?.rpId || DEFAULT_OPENILINK_RP_ID,
@@ -682,6 +693,24 @@ function startLocal(options) {
     return 1;
   }
 
+  let hermes = options["no-hermes"] ? null : hermesPath(config);
+  if (!hermes && !options["no-hermes"]) {
+    if (options["no-install"]) {
+      console.error("Hermes CLI `hermes` is not installed.");
+      console.error("Run: nodus-wechat install-hermes");
+      return 1;
+    }
+
+    console.log("Hermes CLI `hermes` is not installed; installing it now.");
+    runHermesInstaller(config.hermes?.home || hermesHome());
+    hermes = hermesPath(config);
+    if (!hermes) {
+      console.error("Hermes installer completed, but `hermes` is still not on PATH.");
+      console.error("Open a new terminal or add the installed Hermes path to PATH, then rerun `nodus-wechat start`.");
+      return 1;
+    }
+  }
+
   let oih = commandPath("oih");
   if (!oih) {
     if (options["no-install"]) {
@@ -707,6 +736,11 @@ function startLocal(options) {
   const webhookPath = path.join(config.runtime.dir, "poc-webhook", "server.py");
   startManagedProcess(config, "webhook", python, [webhookPath], env);
   startManagedProcess(config, "openilink", oih, [], env);
+  if (hermes) {
+    startManagedProcess(config, "hermes", hermes, ["gateway", "run"], env);
+  } else {
+    console.log("hermes: skipped (--no-hermes)");
+  }
   console.log(`OpeniLink Hub: ${config.openilink?.publicOrigin || DEFAULT_OPENILINK_ORIGIN}`);
   console.log(`Webhook health: http://127.0.0.1:${config.webhook?.port || DEFAULT_WEBHOOK_PORT}/health`);
   return 0;
@@ -731,7 +765,7 @@ async function statusLocal() {
     return 1;
   }
 
-  for (const name of ["openilink", "webhook"]) {
+  for (const name of ["hermes", "openilink", "webhook"]) {
     const pid = readPid(pidPath(config, name));
     console.log(`${name}: ${processRunning(pid) ? `running (pid ${pid})` : "stopped"}`);
   }
@@ -759,7 +793,7 @@ function logsLocal() {
     return 1;
   }
 
-  const files = ["openilink", "webhook"].map((name) => logPath(config, name)).filter((filePath) => fs.existsSync(filePath));
+  const files = ["hermes", "openilink", "webhook"].map((name) => logPath(config, name)).filter((filePath) => fs.existsSync(filePath));
   if (files.length === 0) {
     console.error("No local runtime logs found.");
     return 1;
@@ -799,6 +833,7 @@ function stopLocal() {
 
   stopManagedProcess(config, "webhook");
   stopManagedProcess(config, "openilink");
+  stopManagedProcess(config, "hermes");
   return 0;
 }
 
@@ -856,7 +891,7 @@ function clean(options) {
 
   const config = fs.existsSync(configPath()) ? readConfig() : null;
   if (config) {
-    for (const name of ["webhook", "openilink"]) {
+    for (const name of ["webhook", "openilink", "hermes"]) {
       stopManagedProcess({ ...config, runtime: { ...config.runtime, dir: config.runtime?.dir || path.join(configHome(), "runtime") } }, name);
     }
     const docker = dockerComposeAvailable();

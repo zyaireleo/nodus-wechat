@@ -21,6 +21,10 @@ function tempHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "nodus-wechat-test-"));
 }
 
+function writeExecutable(filePath, content) {
+  fs.writeFileSync(filePath, content, { mode: 0o755 });
+}
+
 test("prints help with available commands", () => {
   const result = run(["--help"]);
 
@@ -207,6 +211,7 @@ test("start can skip automatic OpeniLink install", () => {
   const binDir = path.join(home, "bin");
   fs.mkdirSync(binDir);
   fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "hermes"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
 
   const setup = run(["setup", "--api-key", "sk-test"], {
     NODUS_WECHAT_HOME: home,
@@ -228,6 +233,7 @@ test("start installs OpeniLink automatically when missing", () => {
   const logPath = path.join(home, "openilink-install.log");
   fs.mkdirSync(binDir);
   fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "hermes"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
 
   const setup = run(["setup", "--api-key", "sk-test"], {
     NODUS_WECHAT_HOME: home,
@@ -245,6 +251,85 @@ test("start installs OpeniLink automatically when missing", () => {
   assert.match(result.stdout, /installing it now/);
   assert.equal(fs.readFileSync(logPath, "utf8"), "installed");
   assert.match(result.stderr, /still not on PATH/);
+});
+
+test("start can skip automatic Hermes install", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  fs.mkdirSync(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "oih"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const result = run(["start", "--no-install"], { NODUS_WECHAT_HOME: home, PATH: binDir });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Hermes CLI `hermes` is not installed/);
+  assert.match(result.stderr, /install-hermes/);
+});
+
+test("start installs Hermes automatically when missing", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  const logPath = path.join(home, "hermes-install.log");
+  fs.mkdirSync(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "oih"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const result = run(["start"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+    PATH: binDir,
+    NODUS_WECHAT_HERMES_INSTALL_COMMAND: `${process.execPath} -e "require('node:fs').writeFileSync(process.argv[1], process.argv.slice(2).join(' '))" ${logPath}`,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /Hermes CLI `hermes` is not installed; installing it now/);
+  assert.match(fs.readFileSync(logPath, "utf8"), /--skip-setup/);
+  assert.match(result.stderr, /still not on PATH/);
+});
+
+test("start launches Hermes gateway with host runtime", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  fs.mkdirSync(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "oih"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+  writeExecutable(path.join(binDir, "hermes"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const started = run(["start"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
+  assert.equal(started.status, 0, started.stderr);
+  assert.match(started.stdout, /hermes: started/);
+
+  const status = run(["status"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
+  assert.equal(status.status, 0, status.stderr);
+  assert.match(status.stdout, /hermes: running/);
+
+  assert.equal(fs.existsSync(path.join(home, "runtime", ".nodus-hermes.pid")), true);
+  assert.equal(fs.existsSync(path.join(home, "runtime", "hermes.log")), true);
+
+  const stopped = run(["stop"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
+  assert.equal(stopped.status, 0, stopped.stderr);
 });
 
 test("docker mode remains available explicitly", () => {
