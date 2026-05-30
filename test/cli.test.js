@@ -86,6 +86,7 @@ test("setup writes config without printing the api key", () => {
   assert.match(hermesConfig, /default: "gpt-5\.5"/);
   assert.match(hermesConfig, /base_url: "https:\/\/api\.example\.test\/v1"/);
   assert.match(hermesConfig, /api_key: "\$\{ASTRAGATE_API_KEY\}"/);
+  assert.match(hermesConfig, /language: "zh"/);
 
   const hermesEnv = fs.readFileSync(path.join(hermesHome, ".env"), "utf8");
   assert.match(hermesEnv, /ASTRAGATE_API_KEY=sk-test-secret/);
@@ -324,7 +325,7 @@ test("start installs Hermes automatically when missing", () => {
   assert.match(result.stderr, /still not on PATH/);
 });
 
-test("start launches Hermes gateway with host runtime", () => {
+test("start launches Hermes gateway and dashboard with host runtime", () => {
   const home = tempHome();
   const hermesHome = path.join(home, "hermes");
   const binDir = path.join(home, "bin");
@@ -342,13 +343,43 @@ test("start launches Hermes gateway with host runtime", () => {
   const started = run(["start"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
   assert.equal(started.status, 0, started.stderr);
   assert.match(started.stdout, /hermes: started/);
+  assert.match(started.stdout, /hermes-dashboard: started/);
+  assert.match(started.stdout, /Hermes Dashboard: http:\/\/127\.0\.0\.1:9119/);
 
   const status = run(["status"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /hermes: running/);
+  assert.match(status.stdout, /hermes-dashboard: running/);
 
   assert.equal(fs.existsSync(path.join(home, "runtime", ".nodus-hermes.pid")), true);
+  assert.equal(fs.existsSync(path.join(home, "runtime", ".nodus-hermes-dashboard.pid")), true);
   assert.equal(fs.existsSync(path.join(home, "runtime", "hermes.log")), true);
+  assert.equal(fs.existsSync(path.join(home, "runtime", "hermes-dashboard.log")), true);
+
+  const stopped = run(["stop"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
+  assert.equal(stopped.status, 0, stopped.stderr);
+});
+
+test("start can skip Hermes dashboard", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  fs.mkdirSync(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "python3"));
+  writeExecutable(path.join(binDir, "oih"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+  writeExecutable(path.join(binDir, "hermes"), "#!/bin/sh\nwhile true; do sleep 60; done\n");
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const started = run(["start", "--no-dashboard"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
+  assert.equal(started.status, 0, started.stderr);
+  assert.match(started.stdout, /hermes: started/);
+  assert.doesNotMatch(started.stdout, /hermes-dashboard: started/);
+  assert.equal(fs.existsSync(path.join(home, "runtime", ".nodus-hermes-dashboard.pid")), false);
 
   const stopped = run(["stop"], { NODUS_WECHAT_HOME: home, NODUS_HERMES_HOME: hermesHome, PATH: `${binDir}:/bin:/usr/bin` });
   assert.equal(stopped.status, 0, stopped.stderr);

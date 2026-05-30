@@ -15,6 +15,7 @@ const DEFAULT_OPENILINK_ORIGIN = "http://localhost:9800";
 const DEFAULT_OPENILINK_RP_ID = "localhost";
 const DEFAULT_OPENILINK_PORT = 9800;
 const DEFAULT_WEBHOOK_PORT = 9811;
+const DEFAULT_HERMES_DASHBOARD_PORT = 9119;
 const TEMPLATE_DIR = path.join(__dirname, "..", "templates", "wechat-agent-poc");
 
 function configHome() {
@@ -43,7 +44,7 @@ Usage:
   nodus-wechat install-hermes
   nodus-wechat install-openilink
   nodus-wechat doctor
-  nodus-wechat start [--docker] [--no-install] [--no-hermes]
+  nodus-wechat start [--docker] [--no-install] [--no-hermes] [--no-dashboard]
   nodus-wechat status [--docker]
   nodus-wechat logs [--docker]
   nodus-wechat stop [--docker]
@@ -56,7 +57,7 @@ Commands:
   install-openilink
                   Install OpeniLink Hub native CLI with the official installer.
   doctor          Check local prerequisites and configuration.
-  start           Start Hermes Gateway, OpeniLink, and webhook on the host by default.
+  start           Start Hermes Gateway, Hermes Dashboard, OpeniLink, and webhook on the host by default.
   status          Show local process status.
   logs            Follow local runtime logs.
   stop            Stop the local runtime.
@@ -78,7 +79,7 @@ function parseArgs(argv) {
     }
 
     const key = item.slice(2);
-    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker" || key === "no-install" || key === "no-hermes") {
+    if (key === "help" || key === "yes" || key === "install-hermes" || key === "docker" || key === "no-install" || key === "no-hermes" || key === "no-dashboard") {
       result[key] = true;
       continue;
     }
@@ -198,6 +199,7 @@ function buildHermesConfig(config) {
     '  - "all"',
     "display:",
     '  tool_progress: "all"',
+    '  language: "zh"',
     "compression:",
     "  enabled: true",
     "",
@@ -532,12 +534,14 @@ function commandPath(name) {
 }
 
 function hermesPath(config) {
+  const configuredHome = config?.hermes?.home || hermesHome();
+  const configuredVenvHermes = path.join(configuredHome, "hermes-agent", "venv", "bin", "hermes");
+  const defaultUserHermes = path.join(os.homedir(), ".local", "bin", "hermes");
+  const defaultHermesHome = path.join(os.homedir(), ".hermes");
   return (
     commandPath("hermes") ||
-    (fs.existsSync(path.join(os.homedir(), ".local", "bin", "hermes")) ? path.join(os.homedir(), ".local", "bin", "hermes") : null) ||
-    (config?.hermes?.home && fs.existsSync(path.join(config.hermes.home, "hermes-agent", "venv", "bin", "hermes"))
-      ? path.join(config.hermes.home, "hermes-agent", "venv", "bin", "hermes")
-      : null)
+    (fs.existsSync(configuredVenvHermes) ? configuredVenvHermes : null) ||
+    (configuredHome === defaultHermesHome && fs.existsSync(defaultUserHermes) ? defaultUserHermes : null)
   );
 }
 
@@ -551,6 +555,17 @@ function pidPath(config, name) {
 
 function logPath(config, name) {
   return runtimePath(config, `${name}.log`);
+}
+
+function localProcessNames(options = {}) {
+  const names = ["hermes", "hermes-dashboard", "openilink", "webhook"];
+  if (options["no-hermes"]) {
+    return names.filter((name) => name !== "hermes" && name !== "hermes-dashboard");
+  }
+  if (options["no-dashboard"]) {
+    return names.filter((name) => name !== "hermes-dashboard");
+  }
+  return names;
 }
 
 function readPid(filePath) {
@@ -750,10 +765,17 @@ function startLocal(options) {
   startManagedProcess(config, "openilink", oih, [], env);
   if (hermes) {
     startManagedProcess(config, "hermes", hermes, ["gateway", "run"], env);
+    if (!options["no-dashboard"]) {
+      startManagedProcess(config, "hermes-dashboard", hermes, ["dashboard", "--host", "127.0.0.1", "--port", String(DEFAULT_HERMES_DASHBOARD_PORT), "--no-open"], env);
+    }
   } else {
     console.log("hermes: skipped (--no-hermes)");
+    console.log("hermes-dashboard: skipped (--no-hermes)");
   }
   console.log(`OpeniLink Hub: ${config.openilink?.publicOrigin || DEFAULT_OPENILINK_ORIGIN}`);
+  if (hermes && !options["no-dashboard"]) {
+    console.log(`Hermes Dashboard: http://127.0.0.1:${DEFAULT_HERMES_DASHBOARD_PORT}`);
+  }
   console.log(`Webhook health: http://127.0.0.1:${config.webhook?.port || DEFAULT_WEBHOOK_PORT}/health`);
   return 0;
 }
@@ -777,10 +799,12 @@ async function statusLocal() {
     return 1;
   }
 
-  for (const name of ["hermes", "openilink", "webhook"]) {
+  for (const name of localProcessNames()) {
     const pid = readPid(pidPath(config, name));
     console.log(`${name}: ${processRunning(pid) ? `running (pid ${pid})` : "stopped"}`);
   }
+  const dashboardHealth = await httpGet(`http://127.0.0.1:${DEFAULT_HERMES_DASHBOARD_PORT}`);
+  console.log(`hermes dashboard: ${dashboardHealth.ok ? `ok (${dashboardHealth.statusCode})` : "unreachable"}`);
   const health = await httpGet(`http://127.0.0.1:${config.webhook?.port || DEFAULT_WEBHOOK_PORT}/health`);
   console.log(`webhook health: ${health.ok ? `ok (${health.statusCode})` : "unreachable"}`);
   return 0;
@@ -805,7 +829,7 @@ function logsLocal() {
     return 1;
   }
 
-  const files = ["hermes", "openilink", "webhook"].map((name) => logPath(config, name)).filter((filePath) => fs.existsSync(filePath));
+  const files = localProcessNames().map((name) => logPath(config, name)).filter((filePath) => fs.existsSync(filePath));
   if (files.length === 0) {
     console.error("No local runtime logs found.");
     return 1;
@@ -845,6 +869,7 @@ function stopLocal() {
 
   stopManagedProcess(config, "webhook");
   stopManagedProcess(config, "openilink");
+  stopManagedProcess(config, "hermes-dashboard");
   stopManagedProcess(config, "hermes");
   return 0;
 }
@@ -903,7 +928,7 @@ function clean(options) {
 
   const config = fs.existsSync(configPath()) ? readConfig() : null;
   if (config) {
-    for (const name of ["webhook", "openilink", "hermes"]) {
+    for (const name of ["webhook", "openilink", "hermes-dashboard", "hermes"]) {
       stopManagedProcess({ ...config, runtime: { ...config.runtime, dir: config.runtime?.dir || path.join(configHome(), "runtime") } }, name);
     }
     const docker = dockerComposeAvailable();

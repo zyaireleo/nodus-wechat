@@ -19,6 +19,7 @@ npx nodus-wechat doctor
 npx nodus-wechat start
 npx nodus-wechat start --no-install
 npx nodus-wechat start --no-hermes
+npx nodus-wechat start --no-dashboard
 npx nodus-wechat start --docker
 npx nodus-wechat status
 npx nodus-wechat logs
@@ -50,11 +51,13 @@ the official OpeniLink installer.
 - Installs the OpeniLink + webhook POC runtime at `~/.nodus-wechat/runtime`.
 - Writes Hermes common settings to `~/.hermes/config.yaml`.
 - Writes the AstraGate key to `~/.hermes/.env` as `ASTRAGATE_API_KEY`.
+- Sets Hermes static UI/message language to Simplified Chinese with `display.language: zh`.
 - Writes runtime `.env`, Docker Compose, webhook server, helper scripts, and the OpeniLink reply plugin.
 - Stores gateway base URL, api key, model, Hermes paths, OpeniLink origin, webhook port, and runtime path.
 - Checks Node.js, local configuration, Hermes files, runtime files, Python, OpeniLink CLI, optional Docker Compose availability, Hermes CLI availability, and WeChat app detection with `doctor`.
-- Starts/stops Hermes Gateway, OpeniLink, and the local webhook with native host processes by default.
+- Starts/stops Hermes Gateway, Hermes Dashboard, OpeniLink, and the local webhook with native host processes by default.
 - Installs Hermes and OpeniLink automatically during `start` when the native CLIs are missing.
+- Exposes the Hermes management/configuration UI at `http://127.0.0.1:9119`.
 - Keeps Docker Compose available only when `--docker` is passed.
 - Removes Nodus WeChat config/runtime files with `uninstall --yes`.
 - Cleans Nodus WeChat config/runtime plus generated Hermes settings with `clean --yes`.
