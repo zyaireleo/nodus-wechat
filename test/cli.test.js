@@ -176,6 +176,28 @@ test("install-hermes runs the official installer with the configured Hermes home
   assert.match(args, new RegExp(hermesHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("install-hermes cleans incomplete checkout and forces GitHub HTTPS", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const checkoutDir = path.join(hermesHome, "hermes-agent");
+  const logPath = path.join(home, "env.log");
+  fs.mkdirSync(path.join(checkoutDir, ".git"), { recursive: true });
+
+  const result = run(["install-hermes"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+    NODUS_WECHAT_HERMES_INSTALL_COMMAND: `${process.execPath} -e "const fs=require('node:fs'); fs.writeFileSync(process.argv[1], [process.env.GIT_TERMINAL_PROMPT, process.env.GIT_CONFIG_COUNT, process.env.GIT_CONFIG_KEY_0, process.env.GIT_CONFIG_VALUE_0, fs.existsSync(process.argv[2])].join('\\n'))" ${logPath} ${checkoutDir}`,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const lines = fs.readFileSync(logPath, "utf8").split(/\r?\n/);
+  assert.equal(lines[0], "0");
+  assert.equal(lines[1], "1");
+  assert.equal(lines[2], "url.https://github.com/.insteadOf");
+  assert.equal(lines[3], "git@github.com:");
+  assert.equal(lines[4], "false");
+});
+
 test("setup can install Hermes when explicitly requested", () => {
   const home = tempHome();
   const hermesHome = path.join(home, "hermes");

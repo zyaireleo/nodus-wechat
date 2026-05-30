@@ -1,6 +1,6 @@
 {
   "name": "nodus-wechat",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "CLI installer for Nodus WeChat, Hermes, and the local OpeniLink webhook runtime.",
   "license": "MIT",
   "private": false,

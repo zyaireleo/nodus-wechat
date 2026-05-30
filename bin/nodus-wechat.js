@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const VERSION = "0.7.0";
+const VERSION = "0.7.1";
 const DEFAULT_BASE_URL = "https://api.nodus.sbs/";
 const DEFAULT_MODEL = "gpt-5.5";
 const DEFAULT_OPENILINK_ORIGIN = "http://localhost:9800";
@@ -247,12 +247,24 @@ function openiLinkInstallCommand() {
 }
 
 function runHermesInstaller(hermesDir) {
+  const checkoutDir = path.join(hermesDir, "hermes-agent");
+  if (fs.existsSync(checkoutDir) && fs.existsSync(path.join(checkoutDir, ".git")) && !fs.existsSync(path.join(checkoutDir, "pyproject.toml"))) {
+    fs.rmSync(checkoutDir, { recursive: true, force: true });
+  }
+
   const args = ["--skip-setup", "--hermes-home", hermesDir];
   const command = `${hermesInstallCommand()} ${args.map(shellQuote).join(" ")}`;
   const result = childProcess.spawnSync(command, {
     shell: true,
     stdio: "inherit",
-    env: { ...process.env, HERMES_HOME: hermesDir },
+    env: {
+      ...process.env,
+      HERMES_HOME: hermesDir,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf",
+      GIT_CONFIG_VALUE_0: "git@github.com:",
+    },
   });
 
   if (result.error) {
