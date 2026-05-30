@@ -1,7 +1,7 @@
 {
   "name": "nodus-wechat",
-  "version": "0.7.2",
-  "description": "CLI installer for Nodus WeChat, Hermes, and the local OpeniLink webhook runtime.",
+  "version": "0.8.0",
+  "description": "CLI installer for Nodus WeChat and Hermes native Weixin gateway settings.",
   "license": "MIT",
   "private": false,
   "repository": {

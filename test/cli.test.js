@@ -65,6 +65,7 @@ test("setup writes config without printing the api key", () => {
   assert.equal(config.sub2api.baseUrl, "https://api.example.test/v1");
   assert.equal(config.agent.model, "gpt-5.5");
   assert.equal(config.agent.approvalMode, "wechat-confirm");
+  assert.equal(config.wechat.connector, "hermes-weixin");
   assert.equal(config.hermes.status, "configured");
   assert.equal(config.hermes.home, hermesHome);
   assert.equal(config.hermes.configPath, path.join(hermesHome, "config.yaml"));
@@ -126,7 +127,7 @@ test("bare command runs setup", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /AstraGate API Key/);
   assert.match(result.stdout, /Config written:/);
-  assert.match(result.stdout, /Runtime mode: host process by default/);
+  assert.match(result.stdout, /setup-weixin/);
 
   const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
   assert.equal(config.sub2api.baseUrl, "https://api.nodus.sbs/");
@@ -216,6 +217,46 @@ test("setup can install Hermes when explicitly requested", () => {
   assert.match(fs.readFileSync(logPath, "utf8"), /--skip-setup/);
 });
 
+test("setup-weixin runs the Hermes Weixin setup guide", () => {
+  const home = tempHome();
+  const hermesHome = path.join(home, "hermes");
+  const binDir = path.join(home, "bin");
+  fs.mkdirSync(binDir);
+  writeExecutable(
+    path.join(binDir, "hermes"),
+    [
+      "#!/bin/sh",
+      "echo \"$*\" > \"$HERMES_HOME/weixin-setup-args.log\"",
+      "mkdir -p \"$HERMES_HOME\"",
+      "cat >> \"$HERMES_HOME/.env\" <<'EOF'",
+      "WEIXIN_ACCOUNT_ID=test@im.bot",
+      "WEIXIN_TOKEN=test-token",
+      "EOF",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+
+  const setup = run(["setup", "--api-key", "sk-test"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+
+  const result = run(["setup-weixin", "--no-install"], {
+    NODUS_WECHAT_HOME: home,
+    NODUS_HERMES_HOME: hermesHome,
+    PATH: `${binDir}:/bin:/usr/bin`,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Weixin \/ WeChat setup guide/);
+  assert.equal(fs.readFileSync(path.join(hermesHome, "weixin-setup-args.log"), "utf8").trim(), "gateway setup");
+  const env = fs.readFileSync(path.join(hermesHome, ".env"), "utf8");
+  assert.match(env, /WEIXIN_ACCOUNT_ID=test@im\.bot/);
+  assert.match(env, /WEIXIN_TOKEN=test-token/);
+});
+
 test("install-openilink runs the official installer command", () => {
   const home = tempHome();
   const logPath = path.join(home, "openilink-install.log");
@@ -228,7 +269,7 @@ test("install-openilink runs the official installer command", () => {
   assert.equal(fs.readFileSync(logPath, "utf8"), "installed");
 });
 
-test("start can skip automatic OpeniLink install", () => {
+test("legacy OpeniLink mode can skip automatic OpeniLink install", () => {
   const home = tempHome();
   const hermesHome = path.join(home, "hermes");
   const binDir = path.join(home, "bin");
@@ -242,14 +283,14 @@ test("start can skip automatic OpeniLink install", () => {
   });
   assert.equal(setup.status, 0, setup.stderr);
 
-  const result = run(["start", "--no-install"], { NODUS_WECHAT_HOME: home, PATH: binDir });
+  const result = run(["start", "--openilink", "--no-install"], { NODUS_WECHAT_HOME: home, PATH: binDir });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /OpeniLink Hub CLI `oih` is not installed/);
   assert.match(result.stderr, /install-openilink/);
 });
 
-test("start installs OpeniLink automatically when missing", () => {
+test("legacy OpeniLink mode installs OpeniLink automatically when missing", () => {
   const home = tempHome();
   const hermesHome = path.join(home, "hermes");
   const binDir = path.join(home, "bin");
@@ -264,7 +305,7 @@ test("start installs OpeniLink automatically when missing", () => {
   });
   assert.equal(setup.status, 0, setup.stderr);
 
-  const result = run(["start"], {
+  const result = run(["start", "--openilink"], {
     NODUS_WECHAT_HOME: home,
     PATH: binDir,
     NODUS_WECHAT_OPENILINK_INSTALL_COMMAND: `${process.execPath} -e "require('node:fs').writeFileSync(process.argv[1], 'installed')" ${logPath}`,
@@ -273,7 +314,7 @@ test("start installs OpeniLink automatically when missing", () => {
   assert.equal(result.status, 1);
   assert.match(result.stdout, /installing it now/);
   assert.equal(fs.readFileSync(logPath, "utf8"), "installed");
-  assert.match(result.stderr, /still not on PATH/);
+  assert.match(result.stderr, /OpeniLink installer completed/);
 });
 
 test("start can skip automatic Hermes install", () => {
@@ -322,7 +363,7 @@ test("start installs Hermes automatically when missing", () => {
   assert.equal(result.status, 1);
   assert.match(result.stdout, /Hermes CLI `hermes` is not installed; installing it now/);
   assert.match(fs.readFileSync(logPath, "utf8"), /--skip-setup/);
-  assert.match(result.stderr, /still not on PATH/);
+  assert.match(result.stderr, /Hermes CLI `hermes` is not installed/);
 });
 
 test("start launches Hermes gateway and dashboard with host runtime", () => {
